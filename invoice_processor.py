@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Tuple, List, Dict
-from lookup_data import lookup_dict
+
 
 def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.DataFrame, List[str]]:
     """

@@ -14,3 +14,5 @@ env/
 
 # folders
 test/
+lookup_data.py
+.streamlit/secrets.toml

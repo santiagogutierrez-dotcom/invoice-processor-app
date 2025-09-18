@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from lookup_data import lookup_dict
 from invoice_processor import load_data, process_group, process_datev_export
 
 # --- Page Configuration ---
@@ -47,6 +46,7 @@ def show_process_files_page():
                 try:
                     # --- CHANGE START ---
                     # 1. Load data and capture the list of missing names
+                    lookup_dict = st.secrets["lookup_data"]
                     join_df, missing_names = load_data(pre_file, re_file, lookup_dict)
                     
                     # 2. Display a warning if any names were dropped
@@ -117,6 +117,7 @@ def show_process_files_page():
 def show_lookup_data_page():
     st.title("📖 Lookup Data")
     st.markdown("This table contains the mapping from employee names to their cost centers.")
+    lookup_dict = st.secrets["lookup_data"]
     df = pd.DataFrame(lookup_dict)
     st.dataframe(df, use_container_width=True)
 
