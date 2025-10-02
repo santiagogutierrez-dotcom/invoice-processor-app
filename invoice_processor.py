@@ -18,10 +18,18 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
         - The cleaned, merged dataframe.
         - A list of names that were not found in the lookup data and were dropped.
     """
-    # Load invoice data
-    pre_df = pd.read_csv(pre_file)
-    re_df = pd.read_csv(re_file)
-    merged_df = pd.concat([pre_df, re_df], ignore_index=True)
+    # Load invoice data, handling cases where one file might not be provided
+    dfs_to_concat = []
+    if pre_file:
+        dfs_to_concat.append(pd.read_csv(pre_file))
+
+    if re_file:
+        dfs_to_concat.append(pd.read_csv(re_file))
+
+    if not dfs_to_concat:
+        return pd.DataFrame(), []
+    
+    merged_df = pd.concat(dfs_to_concat, ignore_index=True)
     
     # Create lookup dataframe
     lookup_df = pd.DataFrame(lookup_data)
