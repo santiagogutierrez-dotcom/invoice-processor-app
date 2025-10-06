@@ -37,13 +37,28 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
     # Merge dataframes
     join_df = pd.merge(merged_df, lookup_df, on="Name", how="left")
 
-    # Calculate team plan allocation BEFORE dropping missing names
+    # Convert numeric columns
+    float_cols = [
+        'Base Salary [EUR]', 'Contribution [EUR]', 'Payslip Benefits [EUR]',
+        'Expenses [EUR]', 'Incentives [EUR]', 'Other Benefits [EUR]', 'Total [EUR]'
+    ]
+
+    for col in float_cols:
+        join_df[col] = join_df[col].astype(str).str.replace(',', '')
+        join_df[col] = pd.to_numeric(join_df[col])
+
+    # Calculate team plan allocation
     entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
     if any(name in join_df["Name"].values for name in entity_cost_names):
         entity_cost_rows = join_df[join_df["Name"].isin(entity_cost_names)]
         total_cost = entity_cost_rows["Total [EUR]"].sum()
-        unique_names = join_df["Name"].nunique() 
-        team_plan_per_fte = total_cost / unique_names
+        unique_names = join_df[~join_df["Name"].isin(entity_cost_names)]["Name"].nunique()
+        
+        if unique_names > 0:
+            team_plan_per_fte = total_cost / unique_names
+        else:
+            team_plan_per_fte = 0
+            
         join_df["TEAM PLAN per FTE"] = np.where(
             ~join_df["Name"].isin(entity_cost_names), team_plan_per_fte, np.nan
         )
@@ -74,21 +89,7 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
 
     join_df = join_df[columns].fillna(0)
     
-    return clean_data(join_df), missing_names   
-
-def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Clean and prepare the data"""
-    # Convert numeric columns
-    float_cols = [
-        'Base Salary [EUR]', 'Contribution [EUR]', 'Payslip Benefits [EUR]',
-        'Expenses [EUR]', 'Incentives [EUR]', 'Other Benefits [EUR]', 'Total [EUR]'
-    ]
-    
-    for col in float_cols:
-        df[col] = df[col].astype(str).str.replace(',', '')
-        df[col] = pd.to_numeric(df[col])
-        
-    return df
+    return join_df, missing_names   
 
 def process_group(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Process data into pre-funding and estimate groups"""
