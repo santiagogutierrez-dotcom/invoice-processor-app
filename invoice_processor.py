@@ -48,8 +48,13 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
     if any(name in join_df["Name"].values for name in entity_cost_names):
         entity_cost_rows = join_df[join_df["Name"].isin(entity_cost_names)]
         total_cost = entity_cost_rows["Total [EUR]"].sum()
-        unique_names = join_df["Name"].nunique() 
-        team_plan_per_fte = total_cost / unique_names if unique_names > 0 else 0
+
+        # count only unique employees, excluding entity cost rows
+        employee_names_df = join_df[~join_df["Name"].isin(entity_cost_names)]
+        unique_employee_count = employee_names_df["Name"].nunique() 
+        # --------------------------------------------------------------------
+
+        team_plan_per_fte = total_cost / unique_employee_count if unique_employee_count > 0 else 0
         join_df["TEAM PLAN per FTE"] = np.where(
              ~join_df["Name"].isin(entity_cost_names), team_plan_per_fte, 0
         )
