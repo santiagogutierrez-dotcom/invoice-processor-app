@@ -29,26 +29,35 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
     
     merged_df = pd.concat(dfs_to_concat, ignore_index=True)
     
-    # 2. Merge with lookup data
+    # 2. Convert numeric columns to numbers EARLY
+    float_cols = [
+        'Base Salary [EUR]', 'Contribution [EUR]', 'Payslip Benefits [EUR]',
+        'Expenses [EUR]', 'Incentives [EUR]', 'Other Benefits [EUR]', 'Total [EUR]'
+    ]
+    for col in float_cols:
+        if col in merged_df.columns:
+            # Ensure column exists before trying to convert
+            merged_df[col] = merged_df[col].astype(str).str.replace(',', '', regex=False).replace('', '0')
+            merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce').fillna(0)
+
+    # 3. Merge with lookup data
     lookup_df = pd.DataFrame(lookup_data)
     join_df = pd.merge(merged_df, lookup_df, on="Name", how="left")
 
-    # 3. ALLOCATE entity costs using the full list of employees
+    # 4. ALLOCATE entity costs using the full list of employees
     entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
     if any(name in join_df["Name"].values for name in entity_cost_names):
         entity_cost_rows = join_df[join_df["Name"].isin(entity_cost_names)]
         total_cost = entity_cost_rows["Total [EUR]"].sum()
-        # The unique name count now includes everyone, which is correct
         unique_names = join_df["Name"].nunique() 
-        team_plan_per_fte = total_cost / unique_names
-        # Add the new column with the calculated cost per person
+        team_plan_per_fte = total_cost / unique_names if unique_names > 0 else 0
         join_df["TEAM PLAN per FTE"] = np.where(
              ~join_df["Name"].isin(entity_cost_names), team_plan_per_fte, 0
         )
     else:
         join_df["TEAM PLAN per FTE"] = 0
         
-    # 4. IDENTIFY and REMOVE unmatched employees AFTER allocation
+    # 5. IDENTIFY and REMOVE unmatched employees AFTER allocation
     missing_mask = join_df['Kostenstelle I'].isna()
     if missing_mask.any():
         missing_names = join_df[missing_mask]['Name'].unique().tolist()
@@ -56,14 +65,14 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
     else:
         missing_names = []
     
-    # 5. Perform final cleanup (column selection and numeric conversion)
+    # 6. Perform final column selection
     columns = [
         'Invoice number', 'Name', 'Type', 'Period', 'Country', 'Start date',
         'Payslip FX Rate', 'Base Salary [EUR]', 'Contribution [EUR]', 
         'Payslip Benefits [EUR]', 'Expenses [EUR]', 'Incentives [EUR]',
         'Other Benefits [EUR]', 'Total [EUR]', 'Kostenstelle I',
         'Kostenstellenbezeichnung I', 'Kostenstelle II', 'Kostenstellenbezeichnung II',
-        'TEAM PLAN per FTE' # Make sure to include the new column
+        'TEAM PLAN per FTE'
     ]
 
     for col in columns:
@@ -72,15 +81,6 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
     
     final_df = join_df[columns].fillna(0)
     
-    float_cols = [
-        'Base Salary [EUR]', 'Contribution [EUR]', 'Payslip Benefits [EUR]',
-        'Expenses [EUR]', 'Incentives [EUR]', 'Other Benefits [EUR]', 'Total [EUR]'
-    ]
-    for col in float_cols:
-        if col in final_df.columns:
-            final_df[col] = final_df[col].astype(str).str.replace(',', '').replace('', '0')
-            final_df[col] = pd.to_numeric(final_df[col])
-
     return final_df, missing_names
 
 
