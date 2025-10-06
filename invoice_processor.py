@@ -124,7 +124,7 @@ def process_group(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Data
         }).reset_index()
     
     # Step 2: Get the unique Team Plan cost for each employee
-    team_plan = df[df['TEAM PLAN per FTE'] > 0].groupby('Name')['TEAM PLAN per FTE'].first().reset_index()
+    team_plan = estimate[estimate['TEAM PLAN per FTE'] > 0].groupby('Name')['TEAM PLAN per FTE'].first().reset_index()
 
     # Step 3: Merge the net totals with the Team Plan cost.
     # We remove the original "Entity Cost" rows here, as their cost is now in the 'TEAM PLAN per FTE' column.
