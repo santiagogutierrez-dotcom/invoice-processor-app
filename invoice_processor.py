@@ -106,48 +106,49 @@ def process_group(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Data
     estimate_types = ["Previously billed as estimate", "Actual payroll services provided"]
     estimate = df[df["Type"].isin(estimate_types)].copy()
 
-    # remove original entity cost rows if any
-    entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
-    estimate = estimate[~estimate['Name'].isin(entity_cost_names)].copy()
-
     # Create a summary of travel expenses per invoice/period
     expenses_summary = estimate.groupby(["Invoice number", "Period"])["Expenses [EUR]"].sum().reset_index()
     expenses_summary = expenses_summary[expenses_summary["Expenses [EUR]"] != 0]
+
+    # Step 1: Group data first to get the NET amounts for each employee
+    net_estimate = estimate.groupby(
+        ['Invoice number', 'Name', 'Period'], dropna=False
+    ).agg({
+        'Total [EUR]': 'sum',
+        'Incentives [EUR]': 'sum',
+        'Expenses [EUR]': 'sum',
+        'Kostenstelle I': 'first',
+        'Kostenstellenbezeichnung I': 'first',
+        'Kostenstelle II': 'first',
+        'Kostenstellenbezeichnung II': 'first'
+        }).reset_index()
     
-    # Calculate KOST I totals
-    estimate["Total [EUR] I"] = (
-        estimate["Total [EUR]"].fillna(0)
-        - estimate["Incentives [EUR]"].fillna(0)
-        + estimate["TEAM PLAN per FTE"].fillna(0)
-        - estimate["Expenses [EUR]"].fillna(0)
+    # Step 2: Get the unique Team Plan cost for each employee
+    team_plan = df[df['TEAM PLAN per FTE'] > 0].groupby('Name')['TEAM PLAN per FTE'].first().reset_index()
+
+    # Step 3: Merge the net totals with the Team Plan cost.
+    # We remove the original "Entity Cost" rows here, as their cost is now in the 'TEAM PLAN per FTE' column.
+    entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
+    merged_estimate = pd.merge(
+        net_estimate[~net_estimate['Name'].isin(entity_cost_names)],
+        team_plan,
+        on="Name",
+        how="left"
+    ).fillna(0)
+
+    # Step 4: Perform the final calculation on the NETTED amounts.
+    # This prevents the double-counting issue.
+    merged_estimate["Total [EUR] I"] = (
+        merged_estimate["Total [EUR]"]
+        - merged_estimate["Incentives [EUR]"]
+        + merged_estimate["TEAM PLAN per FTE"]
+        - merged_estimate["Expenses [EUR]"]
     )
     
-    # Group by invoice and name
-    estimate_kost1 = estimate.groupby(
-        ["Invoice number", "Name", "Period"]
-    ).agg({
-        "Kostenstelle I": "first",
-        "Kostenstellenbezeichnung I": "first",
-        "Total [EUR] I": "sum"
-    }).reset_index()
-
-    estimate_kost2 = estimate.groupby(
-        ["Invoice number", "Name"]
-    ).agg({
-        "Kostenstelle II": "first",
-        "Kostenstellenbezeichnung II": "first",
-        "Incentives [EUR]": "sum"
-    }).reset_index().rename(columns={
-        "Incentives [EUR]": "Total [EUR] II"
-    })
-
-    # Merge results
-    estimate_merged = pd.merge(
-        estimate_kost1,
-        estimate_kost2,
-        on=["Invoice number", "Name"],
-        how="outer"
-    )
+    merged_estimate["Total [EUR] II"] = merged_estimate["Incentives [EUR]"]
+    
+    # Final cleanup to match the required output format
+    estimate_merged = merged_estimate.drop(columns=["Total [EUR]", "Expenses [EUR]", "Incentives [EUR]", "TEAM PLAN per FTE"])
 
     return pre_group, estimate_merged, expenses_summary
 
