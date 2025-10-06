@@ -5,8 +5,8 @@ from typing import Tuple, List, Dict
 
 def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.DataFrame, List[str]]:
     """
-    Load and prepare the input data. It also identifies and drops records for names
-    not found in the lookup data.
+    Loads, merges, cleans, and prepares the input data. It allocates entity costs
+    BEFORE dropping records for names not found in the lookup data.
     
     Args:
         pre_file: Path to pre-invoice CSV file
@@ -18,7 +18,7 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
         - The cleaned, merged dataframe.
         - A list of names that were not found in the lookup data and were dropped.
     """
-    # Load invoice data, handling cases where one file might not be provided
+    # 1. Load invoice data, handling cases where one file might not be provided
     dfs_to_concat = []
     if pre_file:
         dfs_to_concat.append(pd.read_csv(pre_file))
@@ -30,42 +30,28 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
         return pd.DataFrame(), []
     
     merged_df = pd.concat(dfs_to_concat, ignore_index=True)
-    
-    # Create lookup dataframe
+
+    # 2. Merge with lookup dataframe
     lookup_df = pd.DataFrame(lookup_data)
-    
-    # Merge dataframes
     join_df = pd.merge(merged_df, lookup_df, on="Name", how="left")
 
-    # Convert numeric columns
-    float_cols = [
-        'Base Salary [EUR]', 'Contribution [EUR]', 'Payslip Benefits [EUR]',
-        'Expenses [EUR]', 'Incentives [EUR]', 'Other Benefits [EUR]', 'Total [EUR]'
-    ]
-
-    for col in float_cols:
-        join_df[col] = join_df[col].astype(str).str.replace(',', '')
-        join_df[col] = pd.to_numeric(join_df[col])
-
-    # Calculate team plan allocation
+    # 3. Allocate entity costs using the full list of employees
     entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
     if any(name in join_df["Name"].values for name in entity_cost_names):
         entity_cost_rows = join_df[join_df["Name"].isin(entity_cost_names)]
         total_cost = entity_cost_rows["Total [EUR]"].sum()
-        unique_names = join_df[~join_df["Name"].isin(entity_cost_names)]["Name"].nunique()
-        
-        if unique_names > 0:
-            team_plan_per_fte = total_cost / unique_names
-        else:
-            team_plan_per_fte = 0
-            
+        # The unique name count now includes everyone, which is correct
+        unique_names = join_df["Name"].nunique() 
+        team_plan_per_fte = total_cost / unique_names
+        # Add the new column with the calculated cost per person
         join_df["TEAM PLAN per FTE"] = np.where(
-            ~join_df["Name"].isin(entity_cost_names), team_plan_per_fte, np.nan
+             ~join_df["Name"].isin(entity_cost_names), team_plan_per_fte, 0
         )
     else:
         join_df["TEAM PLAN per FTE"] = 0
 
-    # Identify, warn about, and drop names not in the lookup table
+
+    # 4. Identify, warn about, and drop names not in the lookup table
     missing_mask = join_df['Kostenstelle I'].isna()
     if missing_mask.any():
         missing_names = join_df[missing_mask]['Name'].unique().tolist()
@@ -75,6 +61,7 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
     else:
         missing_names = []
     
+    # 5. Perform final cleaunup and ensure all necessary columns are present
     columns = [
         'Invoice number', 'Name', 'Type', 'Period', 'Country', 'Start date',
         'Payslip FX Rate', 'Base Salary [EUR]', 'Contribution [EUR]', 
@@ -87,9 +74,19 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
         if col not in join_df.columns:
             join_df[col] = 0
 
-    join_df = join_df[columns].fillna(0)
+    final_df = join_df[columns].fillna(0)
     
-    return join_df, missing_names   
+    float_cols = [
+        'Base Salary [EUR]', 'Contribution [EUR]', 'Payslip Benefits [EUR]',
+        'Expenses [EUR]', 'Incentives [EUR]', 'Other Benefits [EUR]', 'Total [EUR]'
+    ]
+    for col in float_cols:
+        if col in final_df.columns:
+            final_df[col] = final_df[col].astype(str).str.replace(',', '').replace('', '0')
+            final_df[col] = pd.to_numeric(final_df[col])
+
+    return final_df, missing_names
+
 
 def process_group(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Process data into pre-funding and estimate groups"""
