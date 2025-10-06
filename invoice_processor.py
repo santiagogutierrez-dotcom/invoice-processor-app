@@ -76,13 +76,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col])
         
     # Calculate team plan allocation
-    if "Entity Cost" in df["Name"].values:
-        entity_cost_rows = df[df["Name"] == "Entity Cost"]
+    entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
+
+    if any(name in df["Name"].values for name in entity_cost_names):
+        entity_cost_rows = df[df["Name"].isin(entity_cost_names)]
         total_cost = entity_cost_rows["Total [EUR]"].sum()
         unique_names = df["Name"].nunique() 
         team_plan_per_fte = total_cost / unique_names
         df["TEAM PLAN per FTE"] = np.where(
-            df["Name"] != "Entity Cost", team_plan_per_fte, np.nan
+            df["Name"].isin(entity_cost_names), team_plan_per_fte, np.nan
         )
     else:
         df["TEAM PLAN per FTE"] = 0
