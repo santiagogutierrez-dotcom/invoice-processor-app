@@ -18,24 +18,22 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
         - The cleaned, merged dataframe.
         - A list of names that were not found in the lookup data and were dropped.
     """
-    # 1. Load invoice data, handling cases where one file might not be provided
+    # 1. Load and combine source files
     dfs_to_concat = []
     if pre_file:
         dfs_to_concat.append(pd.read_csv(pre_file))
-
     if re_file:
         dfs_to_concat.append(pd.read_csv(re_file))
-
     if not dfs_to_concat:
         return pd.DataFrame(), []
     
     merged_df = pd.concat(dfs_to_concat, ignore_index=True)
-
-    # 2. Merge with lookup dataframe
+    
+    # 2. Merge with lookup data
     lookup_df = pd.DataFrame(lookup_data)
     join_df = pd.merge(merged_df, lookup_df, on="Name", how="left")
 
-    # 3. Allocate entity costs using the full list of employees
+    # 3. ALLOCATE entity costs using the full list of employees
     entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
     if any(name in join_df["Name"].values for name in entity_cost_names):
         entity_cost_rows = join_df[join_df["Name"].isin(entity_cost_names)]
@@ -49,31 +47,29 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
         )
     else:
         join_df["TEAM PLAN per FTE"] = 0
-
-
-    # 4. Identify, warn about, and drop names not in the lookup table
+        
+    # 4. IDENTIFY and REMOVE unmatched employees AFTER allocation
     missing_mask = join_df['Kostenstelle I'].isna()
     if missing_mask.any():
         missing_names = join_df[missing_mask]['Name'].unique().tolist()
-        
-        # Drop the rows with missing names before any further processing
         join_df.dropna(subset=['Kostenstelle I'], inplace=True)
     else:
         missing_names = []
     
-    # 5. Perform final cleaunup and ensure all necessary columns are present
+    # 5. Perform final cleanup (column selection and numeric conversion)
     columns = [
         'Invoice number', 'Name', 'Type', 'Period', 'Country', 'Start date',
         'Payslip FX Rate', 'Base Salary [EUR]', 'Contribution [EUR]', 
         'Payslip Benefits [EUR]', 'Expenses [EUR]', 'Incentives [EUR]',
         'Other Benefits [EUR]', 'Total [EUR]', 'Kostenstelle I',
-        'Kostenstellenbezeichnung I', 'Kostenstelle II', 'Kostenstellenbezeichnung II'
+        'Kostenstellenbezeichnung I', 'Kostenstelle II', 'Kostenstellenbezeichnung II',
+        'TEAM PLAN per FTE' # Make sure to include the new column
     ]
 
     for col in columns:
         if col not in join_df.columns:
             join_df[col] = 0
-
+    
     final_df = join_df[columns].fillna(0)
     
     float_cols = [
