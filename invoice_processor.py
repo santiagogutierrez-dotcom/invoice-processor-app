@@ -37,6 +37,19 @@ def load_data(pre_file: str, re_file: str, lookup_data: List[Dict]) -> Tuple[pd.
     # Merge dataframes
     join_df = pd.merge(merged_df, lookup_df, on="Name", how="left")
 
+    # Calculate team plan allocation BEFORE dropping missing names
+    entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
+    if any(name in join_df["Name"].values for name in entity_cost_names):
+        entity_cost_rows = join_df[join_df["Name"].isin(entity_cost_names)]
+        total_cost = entity_cost_rows["Total [EUR]"].sum()
+        unique_names = join_df["Name"].nunique() 
+        team_plan_per_fte = total_cost / unique_names
+        join_df["TEAM PLAN per FTE"] = np.where(
+            ~join_df["Name"].isin(entity_cost_names), team_plan_per_fte, np.nan
+        )
+    else:
+        join_df["TEAM PLAN per FTE"] = 0
+
     # Identify, warn about, and drop names not in the lookup table
     missing_mask = join_df['Kostenstelle I'].isna()
     if missing_mask.any():
@@ -74,20 +87,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     for col in float_cols:
         df[col] = df[col].astype(str).str.replace(',', '')
         df[col] = pd.to_numeric(df[col])
-        
-    # Calculate team plan allocation
-    entity_cost_names = ["Entity Cost", "Legal entity-wide cost"]
-
-    if any(name in df["Name"].values for name in entity_cost_names):
-        entity_cost_rows = df[df["Name"].isin(entity_cost_names)]
-        total_cost = entity_cost_rows["Total [EUR]"].sum()
-        unique_names = df["Name"].nunique() 
-        team_plan_per_fte = total_cost / unique_names
-        df["TEAM PLAN per FTE"] = np.where(
-            df["Name"].isin(entity_cost_names), team_plan_per_fte, np.nan
-        )
-    else:
-        df["TEAM PLAN per FTE"] = 0
         
     return df
 
